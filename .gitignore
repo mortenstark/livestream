@@ -1,0 +1,75 @@
+# Node modules
+**/node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log
+
+# Dependency directories
+jspm_packages/
+
+# Build output
+dist/
+build/
+coverage/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+auth.json
+secrets.json
+
+# SQLite and DB files
+*.sqlite
+*.db
+*.db-wal
+*.db-shm
+
+# IDE settings
+.vscode/
+.idea/
+
+# Playwright artifacts
+playwright-report/
+test-results/
+trace.zip
+*.trace
+**/traceUtils.js
+**/.playwright-session
+**/chrome-auth-profile/
+**/playwright-user-data/
+**/content-privateApi.js
+**/chrome-data/
+
+# OBS / media assets
+**/*.wav
+**/*.mp3
+**/*.png
+**/*.dll
+**/*.exe
+**/clips/
+
+# Python cache
+**/__pycache__/
+
+# Docker / PID / socket files
+*.pid
+*.sock
+
+# History and metadata
+**/HISTORY.md
+
+# Compressed packages
+*.tgz
+
+# n8n metadata
+**/n8n_data/
