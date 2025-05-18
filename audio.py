@@ -1,7 +1,7 @@
 from config import TTS_FILE
 import time
 
-def play_audio_file(file_path=TTS_FILE):
+def play_audio_file(file_path=TTS_FILE, debug=False):
     """Play an audio file using Python with higher volume"""
     try:
         import sounddevice as sd
@@ -15,18 +15,19 @@ def play_audio_file(file_path=TTS_FILE):
         # Get the list of audio devices
         devices = sd.query_devices()
 
-        # Print all available audio devices for debugging
-        print("\nAll available audio devices:")
-        for i, device in enumerate(devices):
-            output_channels = device.get('max_output_channels', 0)
-            input_channels = device.get('max_input_channels', 0)
-            device_info = []
-            if output_channels > 0:
-                device_info.append(f"Output: {output_channels} ch")
-            if input_channels > 0:
-                device_info.append(f"Input: {input_channels} ch")
-            print(f"{i}: {device['name']} ({', '.join(device_info)})")
-        print()
+        # Print all available audio devices only in debug mode
+        if debug:
+            print("\nAll available audio devices:")
+            for i, device in enumerate(devices):
+                output_channels = device.get('max_output_channels', 0)
+                input_channels = device.get('max_input_channels', 0)
+                device_info = []
+                if output_channels > 0:
+                    device_info.append(f"Output: {output_channels} ch")
+                if input_channels > 0:
+                    device_info.append(f"Input: {input_channels} ch")
+                print(f"{i}: {device['name']} ({', '.join(device_info)})")
+            print()
 
         # Find the CABLE Input device
         cable_device = None
@@ -50,13 +51,10 @@ def play_audio_file(file_path=TTS_FILE):
         else:
             normalized_data = data * 2.0
 
-        # Play the audio file multiple times with higher volume
-        for i in range(5):  # Try 5 times
-            print(f"Playing audio (attempt {i+1}/5)...")
-            sd.play(normalized_data, samplerate, device=cable_device)
-            sd.wait()  # Wait until the audio is finished
-            time.sleep(0.5)  # Short pause between playbacks
-
+        # Play the audio file
+        print("Playing audio...")
+        sd.play(normalized_data, samplerate, device=cable_device)
+        sd.wait()  # Wait until the audio is finished
         print("Audio playback completed")
         return True
     except Exception as e:

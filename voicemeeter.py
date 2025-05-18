@@ -84,15 +84,16 @@ class VoicemeeterRemote:
             print("Logged out from Voicemeeter Remote API")
             self.initialized = False
 
-    def get_parameter_float(self, parameter):
+    def get_parameter_float(self, parameter, debug=False):
         """Get a float parameter from Voicemeeter"""
         if not self.initialized:
             return None
-
         value = ctypes.c_float()
         result = self.dll.VBVMR_GetParameterFloat(parameter.encode(), ctypes.byref(value))
         if result == 0:
             return value.value
+        if debug:
+            print(f"Failed to get parameter {parameter}")
         return None
 
     def set_parameter_float(self, parameter, value):
@@ -122,101 +123,45 @@ class VoicemeeterRemote:
         result = self.dll.VBVMR_SetParameterStringA(parameter.encode(), value.encode())
         return result == 0
 
-    def configure_routing(self):
+    def configure_routing(self, debug=False):
         """Configure Voicemeeter for routing TTS audio to NotebookLM"""
         if not self.initialized:
             print("Voicemeeter Remote API not initialized")
             return False
 
-        # Print current configuration
-        print("\n--- Current Voicemeeter Configuration ---")
+        if debug:
+            print("\n--- Current Voicemeeter Configuration ---")
+            # Print current configuration
+            device = self.get_parameter_string("Strip[0].device.wdm", debug)
+            print(f"Strip[0] current device: {device if device else 'Unknown'}")
+            for output in ["A1", "A2", "A3", "B1", "B2"]:
+                value = self.get_parameter_float(f"Strip[0].{output}", debug)
+                print(f"Strip[0].{output} = {value if value is not None else 'Unknown'}")
+            device = self.get_parameter_string("Bus[3].device.wdm", debug)
+            print(f"Bus[3] current device: {device if device else 'Unknown'}")
 
-        # Get Strip 0 device
-        device = self.get_parameter_string("Strip[0].device.wdm")
-        if device is not None:
-            print(f"Strip[0] current device: {device}")
-        else:
-            print("Failed to get parameter Strip[0].device.wdm")
-            print("Strip[0] current device:")
-
-        # Get Strip 0 routing
-        for output in ["A1", "A2", "A3", "B1", "B2"]:
-            value = self.get_parameter_float(f"Strip[0].{output}")
-            if value is not None:
-                print(f"Strip[0].{output} = {value}")
-
-        # Get Bus 3 (B1) device
-        device = self.get_parameter_string("Bus[3].device.wdm")
-        if device is not None:
-            print(f"Bus[3] current device: {device}")
-        else:
-            print("Failed to get parameter Bus[3].device.wdm")
-            print("Bus[3] current device:")
-
-        # Configure Voicemeeter routing
+        # Configure routing
         print("\n--- Configuring Voicemeeter Routing ---")
-
-        # Set Strip 0 to use CABLE Output as input
-        print("Setting Strip[0].device.wdm to 'CABLE Output (VB-Audio Virtual Cable)'")
         self.set_parameter_string("Strip[0].device.wdm", "CABLE Output (VB-Audio Virtual Cable)")
-
-        # Keep A1 enabled on Strip 0 (don't reset it)
-        # Get current A1 value
-        a1_value = self.get_parameter_float("Strip[0].A1")
-        if a1_value is not None and a1_value == 0:
-            # Only set A1 if it's currently off
-            print("Setting Strip[0].A1 to 1")
-            self.set_parameter_float("Strip[0].A1", 1.0)
-        else:
-            print("Keeping Strip[0].A1 enabled")
-
-        # Reset other outputs
-        print("Resetting Strip[0].A2 to 0")
+        self.set_parameter_float("Strip[0].A1", 1.0)
         self.set_parameter_float("Strip[0].A2", 0.0)
-        print("Resetting Strip[0].A3 to 0")
         self.set_parameter_float("Strip[0].A3", 0.0)
-
-        # Set B1 output
-        print("Setting Strip[0].B1 to 1")
         self.set_parameter_float("Strip[0].B1", 1.0)
-
-        print("Resetting Strip[0].B2 to 0")
         self.set_parameter_float("Strip[0].B2", 0.0)
-
-        # Set Bus 3 (B1) to use CABLE Input as output
-        print("Setting Bus[3].device.wdm to 'CABLE Input (VB-Audio Virtual Cable)'")
         self.set_parameter_string("Bus[3].device.wdm", "CABLE Input (VB-Audio Virtual Cable)")
-
-        # Set gain levels
-        print("Setting Strip[0].Gain to 0.0 dB")
         self.set_parameter_float("Strip[0].Gain", 0.0)
-        print("Setting Bus[3].Gain to 0.0 dB")
         self.set_parameter_float("Bus[3].Gain", 0.0)
 
-        # Verify configuration
-        print("\n--- Verifying Voicemeeter Configuration ---")
-
-        # Get Strip 0 device
-        device = self.get_parameter_string("Strip[0].device.wdm")
-        if device is not None:
-            print(f"Strip[0] device now: {device}")
-        else:
-            print("Failed to get parameter Strip[0].device.wdm")
-            print("Strip[0] device now:")
-
-        # Get Strip 0 routing
-        for output in ["A1", "A2", "A3", "B1", "B2"]:
-            value = self.get_parameter_float(f"Strip[0].{output}")
-            if value is not None:
-                print(f"Strip[0].{output} = {value}")
-
-        # Get Bus 3 (B1) device
-        device = self.get_parameter_string("Bus[3].device.wdm")
-        if device is not None:
-            print(f"Bus[3] device now: {device}")
-        else:
-            print("Failed to get parameter Bus[3].device.wdm")
-            print("Bus[3] device now:")
+        if debug:
+            print("\n--- Verifying Voicemeeter Configuration ---")
+            # Verify configuration
+            device = self.get_parameter_string("Strip[0].device.wdm", debug)
+            print(f"Strip[0] device now: {device if device else 'Unknown'}")
+            for output in ["A1", "A2", "A3", "B1", "B2"]:
+                value = self.get_parameter_float(f"Strip[0].{output}", debug)
+                print(f"Strip[0].{output} = {value if value is not None else 'Unknown'}")
+            device = self.get_parameter_string("Bus[3].device.wdm", debug)
+            print(f"Bus[3] device now: {device if device else 'Unknown'}")
 
         print("Voicemeeter routing configured")
         return True
