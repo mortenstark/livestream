@@ -1,12 +1,83 @@
 import os
 import json
 import asyncio
-from config import TTS_FILE
+import time
+import threading
+from config import TTS_FILE_PATH, MAX_LISTEN_ATTEMPTS, LISTEN_TIMEOUT_SECONDS, NOTEBOOK_URL, PODCAST_NAME, RECORDING_DIR
 from audio import play_audio_file
+from audio_capture import record_audio_from_output
+from voicemeeter import VoicemeeterRemote
+
+async def wait_for_listen_mode(page, timeout=30):
+    """Venter på at podcasten går i lyttemode (animation vises)"""
+    try:
+        print("Venter på at podcasten går i lyttemode...")
+        await page.wait_for_selector('.user-speaking-animation[style*="display: block"]', timeout=timeout*1000)
+        print("🎤 Podcasten er i lyttemode!")
+        return True
+    except Exception as e:
+        print(f"❌ Timeout: Podcasten gik ikke i lyttemode inden for {timeout} sekunder: {e}")
+        return False
+
+async def wait_for_answer_mode(page, timeout=30):
+    """Venter på at podcasten går i svarmode (animation skjules)"""
+    try:
+        print("Venter på at podcasten begynder at svare...")
+        await page.wait_for_selector('.user-speaking-animation[style*="display: none"]', timeout=timeout*1000)
+        print("🤖 Podcasten er i svarmode!")
+        return True
+    except Exception as e:
+        print(f"❌ Timeout: Podcasten gik ikke i svarmode inden for {timeout} sekunder: {e}")
+        return False
+
+async def interactive_flow(page, tts_file, record_duration=60, vm=None):
+    """Håndterer det komplette flow med afspilning og optagelse, synkroniseret med podcast-tilstand"""
+    # 1. Vent på lyttemode
+    if not await wait_for_listen_mode(page):
+        print("Kunne ikke fortsætte, da podcasten ikke gik i lyttemode")
+        return None
+
+    # 2. Afspil TTS-lydfil (spørgsmål)
+    print("🔊 Afspiller TTS...")
+    play_audio_file(tts_file)
+    
+    # 3. Vent på at podcasten går i svarmode (dvs. har modtaget input)
+    if not await wait_for_answer_mode(page):
+        print("Kunne ikke fortsætte, da podcasten ikke gik i svarmode")
+        return None
+
+    # 4. Slå A2 til på strip 0 for at kunne optage
+    if vm:
+        print("Slår A2 til på strip 0 for at kunne optage...")
+        vm.set_parameter_float("Strip[0].A2", 1.0)
+    
+    # 5. Start optagelse af hostens svar
+    print("🎙️ Starter optagelse af svar...")
+    output_file = record_audio_from_output(
+        output_device_name="CABLE Output (VB-Audio Virtual Cable)",
+        duration=record_duration,
+        output_dir=RECORDING_DIR
+    )
+    
+    # 6. Slå A2 fra igen for at undgå feedback ved næste runde
+    if vm:
+        print("Slår A2 fra på strip 0 igen...")
+        vm.set_parameter_float("Strip[0].A2", 0.0)
+    
+    print(f"✅ Optagelse gemt som: {output_file}")
+    return output_file
 
 async def launch_browser_with_auth():
     """Launch browser with authentication and navigate to NotebookLM"""
     from playwright.async_api import async_playwright
+
+    # Initialiser Voicemeeter for at konfigurere A2 output
+    vm = VoicemeeterRemote()
+    vm.login()
+    
+    # Slå A2 fra på strip 0 for at undgå feedback
+    print("Slår A2 fra på strip 0 for at undgå feedback...")
+    vm.set_parameter_float("Strip[0].A2", 0.0)
 
     async with async_playwright() as p:
         # Launch Chromium with specific arguments for microphone access
@@ -89,27 +160,30 @@ async def launch_browser_with_auth():
 
             print("Successfully set up NotebookLM in Interactive Mode")
 
-            # Wait a moment for the interface to stabilize
-            await asyncio.sleep(5)
-
-            # Play the TTS audio file
-            print("Playing TTS audio file...")
-            play_audio_file()
-
-            # Wait a bit after playing the audio file
-            print("Waiting 15 seconds after audio playback...")
-            await asyncio.sleep(15)
-
-            # Play the audio file again to ensure it's captured
-            print("Playing TTS audio file again...")
-            play_audio_file()
+            # Kør det synkroniserede flow for afspilning og optagelse
+            recording_file = await interactive_flow(page, TTS_FILE_PATH, record_duration=60, vm=vm)
+            
+            if recording_file:
+                print(f"Interaktion gennemført! Optagelse gemt som: {recording_file}")
+            else:
+                print("Interaktionen kunne ikke gennemføres korrekt.")
 
             # Keep the browser open
             print("\n*** Browser forbliver åben. Tryk Ctrl+C i terminalen for at afslutte programmet. ***")
-
-            # Wait for the user to terminate the program
+            print("Du kan køre flere interaktioner ved at trykke Enter...")
+            
+            # Tillad flere interaktioner
             while True:
-                await asyncio.sleep(1)
+                # Vent på brugerinput for at starte en ny interaktion
+                await asyncio.get_event_loop().run_in_executor(None, input, "Tryk Enter for at starte en ny interaktion eller Ctrl+C for at afslutte: ")
+                
+                # Kør en ny interaktion
+                recording_file = await interactive_flow(page, TTS_FILE_PATH, record_duration=60, vm=vm)
+                
+                if recording_file:
+                    print(f"Interaktion gennemført! Optagelse gemt som: {recording_file}")
+                else:
+                    print("Interaktionen kunne ikke gennemføres korrekt.")
 
         except Exception as e:
             print(f"Error during browser navigation: {e}")
@@ -125,3 +199,6 @@ async def launch_browser_with_auth():
             print("\n*** En fejl opstod. Browser forbliver åben. Tryk Ctrl+C i terminalen for at afslutte programmet. ***")
             while True:
                 await asyncio.sleep(1)
+        finally:
+            # Logout from Voicemeeter
+            vm.logout()
