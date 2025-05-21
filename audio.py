@@ -1,37 +1,40 @@
-from config import TTS_FILE
+from config import TTS_FILE, TTS_OUTPUT_DEVICE
 import sounddevice as sd
 import soundfile as sf
-import os
+import numpy as np
 
 def play_audio_file(file_path=TTS_FILE, debug=False):
-    """Play an audio file using sounddevice to CABLE-A Input (VB-Audio Virtual Cable A)"""
     try:
-        # Find device index for CABLE-A Input
+        data, samplerate = sf.read(file_path)
         devices = sd.query_devices()
-        cable_a_index = None
-        for i, d in enumerate(devices):
-            if "CABLE-A Input" in d['name'] and d['max_output_channels'] > 0:
-                cable_a_index = i
+        device_index = None
+        for i, device in enumerate(devices):
+            if TTS_OUTPUT_DEVICE in device['name'] and device.get('max_output_channels', 0) > 0:
+                device_index = i
                 break
-        if cable_a_index is None:
-            print("CABLE-A Input (VB-Audio Virtual Cable A) not found!")
+        if device_index is None:
+            print(f"{TTS_OUTPUT_DEVICE} not found among output devices!")
+            print("Available output devices:")
+            for i, device in enumerate(devices):
+                if device.get('max_output_channels', 0) > 0:
+                    print(f"{i}: {device['name']}")
             return False
 
-        if debug:
-            print(f"Using device index {cable_a_index}: {devices[cable_a_index]['name']}")
+        # Normalize and amplify the audio
+        max_val = np.max(np.abs(data))
+        if max_val > 0:
+            normalized_data = data / max_val * 0.7 * 2.0
+        else:
+            normalized_data = data * 2.0
 
-        # Load the audio file
-        data, samplerate = sf.read(file_path)
         if debug:
-            print(f"Playing {file_path} at {samplerate} Hz")
+            print(f"Playing audio to device {device_index}: {devices[device_index]['name']}")
+            print(f"Sample rate: {samplerate}, Duration: {len(data)/samplerate:.2f}s")
 
-        # Play the audio file to CABLE-A Input
-        print("Starting audio playback to CABLE-A Input...")
-        sd.play(data, samplerate, device=cable_a_index)
+        sd.play(normalized_data, samplerate, device=device_index)
         sd.wait()
         print("Audio playback completed")
         return True
-
     except Exception as e:
         print(f"Error playing audio: {e}")
         import traceback

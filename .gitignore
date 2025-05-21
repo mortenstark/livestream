@@ -53,7 +53,6 @@ trace.zip
 # OBS / media assets
 **/*.wav
 **/*.mp3
-**/*.png
 **/*.dll
 **/*.exe
 **/clips/

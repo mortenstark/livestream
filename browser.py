@@ -12,7 +12,10 @@ async def wait_for_listen_mode(page, timeout=30):
     """Venter på at podcasten går i lyttemode (animation vises)"""
     try:
         print("Venter på at podcasten går i lyttemode...")
-        await page.wait_for_selector('.user-speaking-animation[style*="display: block"]', timeout=timeout*1000)
+        # Vent på at animationen bliver SYNLIG
+        await page.wait_for_selector('.user-speaking-animation',
+                                    state='visible',
+                                    timeout=timeout*1000)
         print("🎤 Podcasten er i lyttemode!")
         return True
     except Exception as e:
@@ -23,7 +26,10 @@ async def wait_for_answer_mode(page, timeout=30):
     """Venter på at podcasten går i svarmode (animation skjules)"""
     try:
         print("Venter på at podcasten begynder at svare...")
-        await page.wait_for_selector('.user-speaking-animation[style*="display: none"]', timeout=timeout*1000)
+        # Vent på at animationen bliver SKJULT
+        await page.wait_for_selector('.user-speaking-animation',
+                                    state='hidden',
+                                    timeout=timeout*1000)
         print("🤖 Podcasten er i svarmode!")
         return True
     except Exception as e:

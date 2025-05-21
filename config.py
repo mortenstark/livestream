@@ -10,6 +10,8 @@ VOICEMEETER_DLL_PATH = r"A:\Docker\livestream\spike_claude\VoicemeeterRemote64.d
 # Nye konfigurationsparametre
 # Sti til TTS-filen (bruger den eksisterende TTS_FILE)
 TTS_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), TTS_FILE)
+TTS_OUTPUT_DEVICE = "Voicemeeter Input"
+# TTS_OUTPUT_DEVICE = "CABLE Input (VB-Audio Virtual Cable)"  # eller "CABLE-A Input (VB-Audio Virtual Cable A)"
 
 # Audio konfiguration
 AUDIO_SAMPLE_RATE = 44100
