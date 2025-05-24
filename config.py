@@ -1,30 +1,25 @@
-import os
+# config.py
 
-# Eksisterende konfiguration
-VOICEMEETER_TYPE = 1  # 1 = Banana (ikke 2 = Potato)
-STRIP_INDEX = 0  # First hardware strip (zero-based)
-BUS_INDEX = 3  # B1 (zero-based: A1=0, A2=1, A3=2, B1=3, B2=4)
-TTS_FILE = "graham.wav"
-VOICEMEETER_DLL_PATH = r"A:\Docker\livestream\spike_claude\VoicemeeterRemote64.dll"
+# Audio device configuration
+TTS_OUTPUT_DEVICE = "CABLE Input"  # VB-Cable input device (sender lyd TIL NotebookML)
+AUDIO_INPUT_DEVICE = "CABLE Output"  # VB-Cable output device (modtager lyd FRA NotebookML)
+AUDIO_DEVICE_INDEX = None  # Lad scriptet finde den korrekte device
 
-# Nye konfigurationsparametre
-# Sti til TTS-filen (bruger den eksisterende TTS_FILE)
-TTS_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), TTS_FILE)
-TTS_OUTPUT_DEVICE = "Voicemeeter Input"
-# TTS_OUTPUT_DEVICE = "CABLE Input (VB-Audio Virtual Cable)"  # eller "CABLE-A Input (VB-Audio Virtual Cable A)"
+# Gain settings
+DEFAULT_GAIN = 3.0  # Default gain for audio playback
 
-# Audio konfiguration
-AUDIO_SAMPLE_RATE = 44100
-AUDIO_CHANNELS = 1
+# TTS file path
+TTS_FILE_PATH = "graham.wav"  # Standard TTS fil
+TTS_FILE = "graham.wav"  # Alias for backward compatibility
 
-# NotebookLM konfiguration
+# NotebookLM settings
 NOTEBOOK_URL = "https://notebooklm.google.com/"
 PODCAST_NAME = "Dr. Farsight Podcast"
 
-# Optagelseskonfiguration
+# Recording settings
 RECORDING_DIR = "recordings"
-RECORDING_DURATION = 60  # sekunder
+RECORDING_DURATION = 60  # antal sekunder der optages fra NotebookLM
 
-# Lyttedetektering konfiguration
+# Listen settings
 MAX_LISTEN_ATTEMPTS = 3
 LISTEN_TIMEOUT_SECONDS = 30

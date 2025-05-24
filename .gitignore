@@ -55,6 +55,7 @@ trace.zip
 **/*.mp3
 **/*.dll
 **/*.exe
+**/*.pdf
 **/clips/
 
 # Python cache

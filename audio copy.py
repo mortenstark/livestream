@@ -7,24 +7,24 @@ from config import TTS_OUTPUT_DEVICE, AUDIO_DEVICE_INDEX, DEFAULT_GAIN
 def list_audio_devices():
     """List all available audio devices with their IDs and channels"""
     devices = sd.query_devices()
-
+    
     print("\n=== AUDIO DEVICES ===")
     print(f"{'ID':<4} {'Name':<40} {'In':<4} {'Out':<4} {'Default':<8}")
     print("-" * 65)
-
+    
     default_input = sd.query_devices(kind='input')
     default_output = sd.query_devices(kind='output')
-
+    
     for i, device in enumerate(devices):
         is_default = ""
         if device['name'] == default_input['name'] and device['hostapi'] == default_input['hostapi']:
             is_default += "IN "
         if device['name'] == default_output['name'] and device['hostapi'] == default_output['hostapi']:
             is_default += "OUT"
-
+        
         print(f"{i:<4} {device['name'][:39]:<40} {device['max_input_channels']:<4} "
               f"{device['max_output_channels']:<4} {is_default:<8}")
-
+    
     # Look for VB-Cable devices
     vb_devices = [i for i, d in enumerate(devices) if 'CABLE' in d['name']]
     if vb_devices:
@@ -34,7 +34,7 @@ def list_audio_devices():
             print(f"ID {dev_id}: {device['name']} (In: {device['max_input_channels']}, Out: {device['max_output_channels']})")
     else:
         print("\nNo VB-Cable devices found!")
-
+    
     return devices
 
 def play_audio_file(file_path, device_index=None, gain=DEFAULT_GAIN, monitor=False, debug=False):
@@ -53,8 +53,10 @@ def play_audio_file(file_path, device_index=None, gain=DEFAULT_GAIN, monitor=Fal
                 # Fall back to searching by name
                 for i, device in enumerate(devices):
                     if TTS_OUTPUT_DEVICE in device['name'] and device.get('max_output_channels', 0) > 0:
-                        device_index = i
-                        break
+                        # Prioriter 2-kanals versionen
+                        if device.get('max_output_channels', 0) == 2:
+                            device_index = i
+                            break
 
         if device_index is None:
             print(f"{TTS_OUTPUT_DEVICE} not found among output devices!")
@@ -102,12 +104,36 @@ def play_audio_file(file_path, device_index=None, gain=DEFAULT_GAIN, monitor=Fal
         else:
             print(f"🔄 Final audio format: 1 channel, {len(data)} samples")
 
-        # Play the audio directly
-        print("▶️ Starting playback...")
-        sd.play(data, samplerate, device=device_index)
-        sd.wait()  # Vent til afspilningen er færdig
-        print("✅ Playback complete.")
-        return True
+        # Play the audio
+        try:
+            if monitor:
+                def callback(outdata, frames, time, status):
+                    if status:
+                        print(f"Status: {status}")
+                    if outdata.size > 0:
+                        level = np.sqrt(np.mean(outdata**2))
+                        bars = int(level * 50)
+                        sys.stdout.write('\r[' + '█' * bars + ' ' * (50 - bars) + f'] {level:.3f}')
+                        sys.stdout.flush()
+                with sd.OutputStream(
+                    samplerate=samplerate,
+                    device=device_index,
+                    channels=max_channels,
+                    callback=callback
+                ):
+                    sd.play(data, samplerate, device=device_index, blocking=True)
+                    sys.stdout.write('\n')  # New line after level display
+            else:
+                print("▶️ Starting playback...")
+                sd.play(data, samplerate, device=device_index)
+                sd.wait()
+                print("✅ Playback complete.")
+            return True
+        except Exception as e:
+            print(f"❌ Playback error: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     except Exception as e:
         print(f"❌ Error playing audio: {e}")
         import traceback
@@ -156,7 +182,7 @@ def generate_test_tone(frequency=440, duration=3, device_index=None, gain=1.0):
 
         # Play the tone
         sd.play(tone, sample_rate, device=device_index)
-
+        
         # Show a progress bar
         for i in range(int(duration)):
             progress = int(30 * (i+1) / duration)
@@ -164,7 +190,7 @@ def generate_test_tone(frequency=440, duration=3, device_index=None, gain=1.0):
             sys.stdout.flush()
             import time
             time.sleep(1)
-
+        
         sd.stop()
         print("\n✅ Test tone complete.")
         return True

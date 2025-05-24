@@ -1,53 +1,81 @@
-import asyncio
-import time
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
-from voicemeeter import VoicemeeterRemote
+import sys
+import asyncio
+import argparse
+from datetime import datetime
+import traceback
+import platform
+
 from browser import launch_browser_with_auth
-from audio_capture import record_audio_from_output
+from audio import list_audio_devices
 from config import RECORDING_DIR
 
-def print_with_timestamp(message, last_time=None):
-    """Print a message with a timestamp and time since the last message."""
-    current_time = time.time()
-    timestamp = time.strftime("%H:%M:%S", time.localtime(current_time))
-    elapsed = f"(+{current_time - last_time:.2f}s)" if last_time else ""
-    print(f"{timestamp} {elapsed} {message}")
-    return current_time
+def kill_all_chromium():
+    """Dræber alle kørende Chromium-processer for at sikre en ren start"""
+    import os
+    import platform
 
-async def main(debug=False):
-    last_time = None
-
-    # Ensure recordings directory exists
-    os.makedirs(RECORDING_DIR, exist_ok=True)
-
-    # Initialize Voicemeeter
-    vm = VoicemeeterRemote()
-    vm.login()
-
-    # Configure Voicemeeter routing
-    last_time = print_with_timestamp("Configuring Voicemeeter routing...", last_time)
-    vm.configure_routing(debug=debug)
+    system = platform.system()
 
     try:
-        # Launch browser with authentication
-        last_time = print_with_timestamp("Launching browser with authentication...", last_time)
-        await launch_browser_with_auth()
-
-        # Optagelsen startes i browser.py lige før Join-knappen klikkes
-        last_time = print_with_timestamp("Venter på at optagelsen er færdig...", last_time)
-
-        # Vent på at processen er færdig (browser.py holder browseren åben)
-        while True:
-            await asyncio.sleep(1)
-
-    except KeyboardInterrupt:
-        print_with_timestamp("Program terminated by user", last_time)
+        if system == "Windows":
+            os.system("taskkill /f /im chromium.exe >nul 2>&1")
+            print("✅ Alle Chromium-processer afsluttet (Windows)")
+        elif system == "Darwin":  # macOS
+            os.system("pkill -f 'Chromium' >/dev/null 2>&1")
+            print("✅ Alle Chromium-processer afsluttet (macOS)")
+        elif system == "Linux":
+            os.system("pkill -f chromium >/dev/null 2>&1")
+            print("✅ Alle Chromium-processer afsluttet (Linux)")
+        else:
+            print(f"⚠️ Ukendt operativsystem: {system}, kan ikke afslutte Chromium-processer")
     except Exception as e:
-        print_with_timestamp(f"Error: {e}", last_time)
-    finally:
-        # Clean up Voicemeeter
-        last_time = print_with_timestamp("Cleaning up Voicemeeter...", last_time)
-        vm.logout()
+        print(f"⚠️ Fejl ved afslutning af Chromium-processer: {e}")
+
+async def main(debug_mode=False, tts_file=None):
+    """Hovedfunktion der kører hele processen"""
+    try:
+        # Sørg for at output-mappen eksisterer
+        os.makedirs(RECORDING_DIR, exist_ok=True)
+        
+        # Opdater TTS_FILE_PATH i config hvis specificeret
+        if tts_file:
+            from config import TTS_FILE_PATH
+            # Gem den oprindelige værdi
+            original_tts_path = TTS_FILE_PATH
+            # Opdater config-modulet dynamisk
+            import config
+            config.TTS_FILE_PATH = tts_file
+            if debug_mode:
+                print(f"DEBUG: Using custom TTS file: {tts_file}")
+                print(f"DEBUG: Original TTS file was: {original_tts_path}")
+        
+        # Start browser og kør interaktionen
+        await launch_browser_with_auth(debug_mode=debug_mode)
+        
+    except Exception as e:
+        if debug_mode:
+            print(f"DEBUG: Error in main function: {e}")
+            print(f"DEBUG: Traceback: {traceback.format_exc()}")
+        else:
+            print(f"Error in main function: {e}")
+        return 1
+    
+    return 0
 
 if __name__ == "__main__":
-    asyncio.run(main(debug=False))  # Set debug=True for detailed output
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="NotebookLM Podcast Automation")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--tts", type=str, help="Path to TTS audio file to use")
+    args = parser.parse_args()
+
+    # Kill all Chromium processes before starting
+    kill_all_chromium()
+
+    # Run the main function
+    exit_code = asyncio.run(main(debug_mode=args.debug, tts_file=args.tts))
+    sys.exit(exit_code)
