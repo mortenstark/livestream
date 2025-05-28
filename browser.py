@@ -11,6 +11,7 @@ from config import TTS_FILE_PATH, MAX_LISTEN_ATTEMPTS, LISTEN_TIMEOUT_SECONDS, N
 from audio_capture import record_audio_from_output
 from audio import list_audio_devices
 
+
 async def wait_for_listen_mode(page, timeout=30, debug_mode=False):
     """Venter på at podcasten går i lyttemode (animation vises)"""
     try:
@@ -22,22 +23,41 @@ async def wait_for_listen_mode(page, timeout=30, debug_mode=False):
         return True
     except Exception as e:
         if debug_mode:
-            print(f"DEBUG: ❌ Timeout: Podcasten gik ikke i lyttemode inden for {timeout} sekunder: {e}")
+            print(
+                f"DEBUG: ❌ Timeout: Podcasten gik ikke i lyttemode inden for {timeout} sekunder: {e}")
         return False
+
 
 async def wait_for_answer_mode(page, timeout=30, debug_mode=False):
     """Venter på at podcasten går i svarmode (animation skjules)"""
     try:
+        # First check if it's already in answer mode
+        is_already_answering = await page.query_selector('.user-speaking-animation[style*="display: none"]') is not None
+        if is_already_answering:
+            if debug_mode:
+                print("DEBUG: 🤖 Podcasten er allerede i svarmode!")
+            return True
+
         if debug_mode:
             print("DEBUG: Venter på at podcasten begynder at svare...")
-        await page.wait_for_selector('.user-speaking-animation[style*="display: none"]', timeout=timeout*1000)
-        if debug_mode:
-            print("DEBUG: 🤖 Podcasten er i svarmode!")
-        return True
+
+        # Use a polling approach with shorter intervals
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            is_answering = await page.query_selector('.user-speaking-animation[style*="display: none"]') is not None
+            if is_answering:
+                if debug_mode:
+                    print("DEBUG: 🤖 Podcasten er i svarmode!")
+                return True
+            await asyncio.sleep(0.5)  # Check every 500ms
+
+        raise TimeoutError(f"Timeout after {timeout} seconds")
     except Exception as e:
         if debug_mode:
-            print(f"DEBUG: ❌ Timeout: Podcasten gik ikke i svarmode inden for {timeout} sekunder: {e}")
+            print(
+                f"DEBUG: ❌ Timeout: Podcasten gik ikke i svarmode inden for {timeout} sekunder: {e}")
         return False
+
 
 async def interactive_flow(page, tts_file, record_duration=60, monitor=True, debug_mode=False):
     """Håndterer det komplette flow med afspilning og optagelse, synkroniseret med podcast-tilstand"""
@@ -78,9 +98,12 @@ async def interactive_flow(page, tts_file, record_duration=60, monitor=True, deb
         device_info = sd.query_devices(cable_input_index)
 
         if debug_mode:
-            print(f"DEBUG: Using device #{cable_input_index}: {device_info['name']}")
-            print(f"DEBUG: Max output channels: {device_info['max_output_channels']}")
-            print(f"DEBUG: Default sample rate: {device_info['default_samplerate']} Hz")
+            print(
+                f"DEBUG: Using device #{cable_input_index}: {device_info['name']}")
+            print(
+                f"DEBUG: Max output channels: {device_info['max_output_channels']}")
+            print(
+                f"DEBUG: Default sample rate: {device_info['default_samplerate']} Hz")
 
         # Indlæs lydfilen
         try:
@@ -89,23 +112,28 @@ async def interactive_flow(page, tts_file, record_duration=60, monitor=True, deb
             if debug_mode:
                 print(f"DEBUG: Audio file loaded: {tts_file}")
                 print(f"DEBUG: Sample rate: {file_samplerate} Hz")
-                print(f"DEBUG: Channels: {data.shape[1] if len(data.shape) > 1 else 1}")
-                print(f"DEBUG: Duration: {len(data)/file_samplerate:.2f} seconds")
+                print(
+                    f"DEBUG: Channels: {data.shape[1] if len(data.shape) > 1 else 1}")
+                print(
+                    f"DEBUG: Duration: {len(data)/file_samplerate:.2f} seconds")
 
             # Resample til device'ets sample rate hvis nødvendigt
             target_samplerate = int(device_info['default_samplerate'])
             if file_samplerate != target_samplerate:
                 if debug_mode:
-                    print(f"DEBUG: Resampling from {file_samplerate} Hz to {target_samplerate} Hz")
+                    print(
+                        f"DEBUG: Resampling from {file_samplerate} Hz to {target_samplerate} Hz")
                 try:
                     import scipy.signal
                     # Beregn antal samples i den nye sample rate
-                    num_samples = int(len(data) * target_samplerate / file_samplerate)
+                    num_samples = int(
+                        len(data) * target_samplerate / file_samplerate)
                     # Resample data
                     if len(data.shape) > 1:  # Hvis stereo eller flere kanaler
                         resampled_data = np.zeros((num_samples, data.shape[1]))
                         for channel in range(data.shape[1]):
-                            resampled_data[:, channel] = scipy.signal.resample(data[:, channel], num_samples)
+                            resampled_data[:, channel] = scipy.signal.resample(
+                                data[:, channel], num_samples)
                         data = resampled_data
                     else:  # Hvis mono
                         data = scipy.signal.resample(data, num_samples)
@@ -114,7 +142,8 @@ async def interactive_flow(page, tts_file, record_duration=60, monitor=True, deb
                 except ImportError:
                     if debug_mode:
                         print("DEBUG: scipy not installed, skipping resampling")
-                    print("WARNING: Sample rate mismatch may cause issues. Install scipy for resampling.")
+                        print(
+                            "WARNING: Sample rate mismatch may cause issues. Install scipy for resampling.")
 
             # Anvend gain
             gain = DEFAULT_GAIN
@@ -140,43 +169,41 @@ async def interactive_flow(page, tts_file, record_duration=60, monitor=True, deb
             if debug_mode:
                 print("DEBUG: Audio playback completed")
 
+            # No delay after audio playback - removed the 2-second wait
+
+            # 3. Vent på at podcasten går i svarmode (dvs. har modtaget input)
+            if debug_mode:
+                print("DEBUG: Waiting for answer mode")
+            if not await wait_for_answer_mode(page, debug_mode=debug_mode):
+                if debug_mode:
+                    print(
+                        "DEBUG: Could not continue, podcast did not enter answer mode")
+                return None
+
+            # 4. Start optagelse af hostens svar
+            if debug_mode:
+                print("DEBUG: Starting recording")
+            output_file = record_audio_from_output(
+                output_device_name=AUDIO_INPUT_DEVICE,
+                duration=record_duration,
+                output_dir=RECORDING_DIR,
+                monitor=monitor
+            )
+            if debug_mode:
+                print(f"DEBUG: Recording completed, output_file={output_file}")
+
+            if debug_mode:
+                print(f"DEBUG: ✅ Optagelse gemt som: {output_file}")
+            else:
+                print(f"✅ Optagelse gemt som: {output_file}")
+            return output_file
+
         except Exception as e:
             if debug_mode:
                 print(f"DEBUG: Error playing audio: {e}")
                 import traceback
                 traceback.print_exc()
             return None
-
-        # Vent lidt efter afspilning
-        if debug_mode:
-            print("DEBUG: Waiting 2 seconds after audio playback")
-        await asyncio.sleep(2)
-
-        # 3. Vent på at podcasten går i svarmode (dvs. har modtaget input)
-        if debug_mode:
-            print("DEBUG: Waiting for answer mode")
-        if not await wait_for_answer_mode(page, debug_mode=debug_mode):
-            if debug_mode:
-                print("DEBUG: Could not continue, podcast did not enter answer mode")
-            return None
-
-        # 4. Start optagelse af hostens svar
-        if debug_mode:
-            print("DEBUG: Starting recording")
-        output_file = record_audio_from_output(
-            output_device_name=AUDIO_INPUT_DEVICE,
-            duration=record_duration,
-            output_dir=RECORDING_DIR,
-            monitor=monitor
-        )
-        if debug_mode:
-            print(f"DEBUG: Recording completed, output_file={output_file}")
-
-        if debug_mode:
-            print(f"DEBUG: ✅ Optagelse gemt som: {output_file}")
-        else:
-            print(f"✅ Optagelse gemt som: {output_file}")
-        return output_file
 
     except Exception as e:
         if debug_mode:
@@ -185,6 +212,7 @@ async def interactive_flow(page, tts_file, record_duration=60, monitor=True, deb
         else:
             print(f"Error during interactive flow: {e}")
         return None
+
 
 async def launch_browser_with_auth(debug_mode=False):
     """Launch browser with authentication and navigate to NotebookLM"""
@@ -220,10 +248,12 @@ async def launch_browser_with_auth(debug_mode=False):
 
     if not cable_input_found or not cable_output_found:
         if debug_mode:
-            print("DEBUG: WARNING: Required audio devices not found. Audio routing may not work correctly.")
+            print(
+                "DEBUG: WARNING: Required audio devices not found. Audio routing may not work correctly.")
             print("DEBUG: Please ensure VB-Cable is properly installed and configured.")
         else:
-            print("WARNING: Required audio devices not found. Audio routing may not work correctly.")
+            print(
+                "WARNING: Required audio devices not found. Audio routing may not work correctly.")
             print("Please ensure VB-Cable is properly installed and configured.")
 
     async with async_playwright() as p:
@@ -295,7 +325,8 @@ async def launch_browser_with_auth(debug_mode=False):
 
             # I browser.py, når vi instruerer brugeren:
             print("\n*** VIGTIGT: Mikrofonindstillinger i Chromium ***")
-            print("1. Åbn Chromium's indstillinger manuelt (tre prikker øverst til højre)")
+            print(
+                "1. Åbn Chromium's indstillinger manuelt (tre prikker øverst til højre)")
             print("2. Gå til Indstillinger > Webstedstilladelser > Mikrofon")
             print("3. Vælg 'CABLE Output (VB-Audio Virtual Cable)' fra dropdown-menuen")
             print("   Dette gør at NotebookML modtager lyd FRA dit program via VB-Cable")
@@ -386,9 +417,11 @@ async def launch_browser_with_auth(debug_mode=False):
 
             if recording_file:
                 if debug_mode:
-                    print(f"DEBUG: Interaktion gennemført! Optagelse gemt som: {recording_file}")
+                    print(
+                        f"DEBUG: Interaktion gennemført! Optagelse gemt som: {recording_file}")
                 else:
-                    print(f"Interaktion gennemført! Optagelse gemt som: {recording_file}")
+                    print(
+                        f"Interaktion gennemført! Optagelse gemt som: {recording_file}")
             else:
                 if debug_mode:
                     print("DEBUG: Interaktionen kunne ikke gennemføres korrekt.")
@@ -397,10 +430,12 @@ async def launch_browser_with_auth(debug_mode=False):
 
             # Keep the browser open
             if debug_mode:
-                print("\nDEBUG: *** Browser forbliver åben. Tryk Ctrl+C i terminalen for at afslutte programmet. ***")
+                print(
+                    "\nDEBUG: *** Browser forbliver åben. Tryk Ctrl+C i terminalen for at afslutte programmet. ***")
                 print("DEBUG: Du kan køre flere interaktioner ved at trykke Enter...")
             else:
-                print("\n*** Browser forbliver åben. Tryk Ctrl+C i terminalen for at afslutte programmet. ***")
+                print(
+                    "\n*** Browser forbliver åben. Tryk Ctrl+C i terminalen for at afslutte programmet. ***")
                 print("Du kan køre flere interaktioner ved at trykke Enter...")
 
             # Tillad flere interaktioner
@@ -418,9 +453,11 @@ async def launch_browser_with_auth(debug_mode=False):
 
                 if recording_file:
                     if debug_mode:
-                        print(f"DEBUG: Interaktion gennemført! Optagelse gemt som: {recording_file}")
+                        print(
+                            f"DEBUG: Interaktion gennemført! Optagelse gemt som: {recording_file}")
                     else:
-                        print(f"Interaktion gennemført! Optagelse gemt som: {recording_file}")
+                        print(
+                            f"Interaktion gennemført! Optagelse gemt som: {recording_file}")
                 else:
                     if debug_mode:
                         print("DEBUG: Interaktionen kunne ikke gennemføres korrekt.")
@@ -438,7 +475,8 @@ async def launch_browser_with_auth(debug_mode=False):
             try:
                 screenshot_path = "error_screenshot.png"
                 if debug_mode:
-                    print(f"DEBUG: Taking screenshot and saving to {screenshot_path}")
+                    print(
+                        f"DEBUG: Taking screenshot and saving to {screenshot_path}")
                 await page.screenshot(path=screenshot_path)
                 if debug_mode:
                     print(f"DEBUG: Screenshot saved as {screenshot_path}")
@@ -446,14 +484,17 @@ async def launch_browser_with_auth(debug_mode=False):
                     print(f"Screenshot saved as {screenshot_path}")
             except Exception as screenshot_error:
                 if debug_mode:
-                    print(f"DEBUG: Error taking screenshot: {screenshot_error}")
+                    print(
+                        f"DEBUG: Error taking screenshot: {screenshot_error}")
                 else:
                     print(f"Error taking screenshot: {screenshot_error}")
 
             # Wait for the user to terminate the program
             if debug_mode:
-                print("\nDEBUG: *** En fejl opstod. Browser forbliver åben. Tryk Ctrl+C i terminalen for at afslutte programmet. ***")
+                print(
+                    "\nDEBUG: *** En fejl opstod. Browser forbliver åben. Tryk Ctrl+C i terminalen for at afslutte programmet. ***")
             else:
-                print("\n*** En fejl opstod. Browser forbliver åben. Tryk Ctrl+C i terminalen for at afslutte programmet. ***")
+                print(
+                    "\n*** En fejl opstod. Browser forbliver åben. Tryk Ctrl+C i terminalen for at afslutte programmet. ***")
             while True:
                 await asyncio.sleep(1)
